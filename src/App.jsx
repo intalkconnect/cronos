@@ -14,7 +14,7 @@ function useLocalStorage(key, initial){
 }
 
 export default function App(){
-  const [baseUrl, setBaseUrl] = useLocalStorage('cronos.baseUrl', 'http://localhost:18080')
+  const [baseUrl, setBaseUrl] = useLocalStorage('cronos.baseUrl', 'http://178.156.175.149:8085')
   const [tenant, setTenant] = useLocalStorage('cronos.tenant', 'hmg')
   const [replicas, setReplicas] = useLocalStorage('cronos.replicas', {...DEFAULT_REPLICAS})
   const [busy, setBusy] = useState(false)
@@ -81,10 +81,6 @@ export default function App(){
           <div className="head"><h2 style={{margin:0,fontSize:16,fontWeight:600}}>Configuração</h2></div>
           <div className="content">
             <div className="grid two">
-              <label className="field">
-                <span>Base URL do Provisioner</span>
-                <input value={baseUrl} onChange={e=>setBaseUrl(e.target.value)} placeholder="http://host:18080" />
-              </label>
               <label className="field">
                 <span>TENANT</span>
                 <input value={tenant} onChange={e=>setTenant(e.target.value)} placeholder="hmg" />
