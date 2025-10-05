@@ -1,4 +1,5 @@
 import React from 'react'
-export default function Badge({children, ok}){
-  return <span className={`badge ${ok ? 'green' : 'red'}`}>{children}</span>
+export default function Badge({children, state}){
+  const cls = state === 'ok' ? 'green' : state === 'down' ? 'red' : 'amber'
+  return <span className={`badge ${cls}`}>{children}</span>
 }

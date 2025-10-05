@@ -1,67 +1,57 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import SectionCard from './components/SectionCard.jsx'
-import NumberInput from './components/NumberInput.jsx'
 import Badge from './components/Badge.jsx'
 
-const DEFAULT_REPLICAS = { incoming: 1, outcoming: 1, campaign: 1, status: 1 }
-
-function useLocalStorage(key, initial){
-  const [value, setValue] = useState(() => {
-    try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : initial } catch { return initial }
-  })
-  useEffect(()=>{ try { localStorage.setItem(key, JSON.stringify(value)) } catch{} }, [key, value])
-  return [value, setValue]
-}
+const API_BASE = (import.meta.env && import.meta.env.VITE_API_BASE) || ''
 
 export default function App(){
-  const [baseUrl, setBaseUrl] = useLocalStorage('cronos.baseUrl', 'http://178.156.175.149:8085')
-  const [tenant, setTenant] = useLocalStorage('cronos.tenant', 'hmg')
-  const [replicas, setReplicas] = useLocalStorage('cronos.replicas', {...DEFAULT_REPLICAS})
+  const [tenantCreate, setTenantCreate] = useState('hmg')
+  const [tenantScale, setTenantScale] = useState('hmg')
+  const [scaleCount, setScaleCount] = useState(1)
   const [busy, setBusy] = useState(false)
-  const [health, setHealth] = useState(undefined)
+  const [health, setHealth] = useState('idle')
   const [log, setLog] = useState('')
 
   const headers = useMemo(()=>({ 'Content-Type':'application/json' }),[])
 
+  // Health ping (sem expor a URL na UI)
   useEffect(()=>{
     let stop = false
     async function ping(){
+      if(!API_BASE){ setHealth('idle'); return }
       try {
-        const r = await fetch(`${baseUrl.replace(/\/$/, '')}/health`)
-        const t = await r.text(); if(!stop) setHealth(t.trim())
-      } catch { if(!stop) setHealth(undefined) }
+        const r = await fetch(`${API_BASE.replace(/\/$/, '')}/health`)
+        const t = (await r.text()).trim()
+        if(!stop) setHealth(t === 'ok' ? 'ok' : 'down')
+      } catch { if(!stop) setHealth('down') }
     }
     ping(); const id = setInterval(ping, 5000); return ()=>{ stop = true; clearInterval(id) }
-  }, [baseUrl])
-
-  function setRep(key, val){ setReplicas(prev=> ({...prev, [key]: Math.max(0, Number.isFinite(val)? val : 0)})) }
+  }, [])
 
   async function doCreate(){
-    if(!tenant){ alert('Informe o tenant'); return }
+    if(!tenantCreate){ alert('Informe o tenant'); return }
+    if(!API_BASE){ alert('API base não configurada. Defina VITE_API_BASE no .env'); return }
     setBusy(true); setLog('')
     try {
-      const r = await fetch(`${baseUrl.replace(/\/$/, '')}/clientes`, { method:'POST', headers, body: JSON.stringify({ tenant, replicas }) })
+      const r = await fetch(`${API_BASE.replace(/\/$/, '')}/clientes`, {
+        method:'POST', headers, body: JSON.stringify({ tenant: tenantCreate })
+      })
       const data = await r.json().catch(()=>({ raw: true }))
       setLog(JSON.stringify(data, null, 2))
     } catch(e){ setLog(String(e)) } finally { setBusy(false) }
   }
 
   async function doScale(){
-    if(!tenant){ alert('Informe o tenant'); return }
+    if(!tenantScale){ alert('Informe o tenant'); return }
+    if(!Number.isFinite(scaleCount) || scaleCount < 0){ alert('Réplicas inválidas'); return }
+    if(!API_BASE){ alert('API base não configurada. Defina VITE_API_BASE no .env'); return }
     setBusy(true); setLog('')
     try {
-      const r = await fetch(`${baseUrl.replace(/\/$/, '')}/clientes/${encodeURIComponent(tenant)}/scale`, { method:'POST', headers, body: JSON.stringify(replicas) })
-      const data = await r.json().catch(()=>({ raw: true }))
-      setLog(JSON.stringify(data, null, 2))
-    } catch(e){ setLog(String(e)) } finally { setBusy(false) }
-  }
-
-  async function doDelete(){
-    if(!tenant){ alert('Informe o tenant'); return }
-    if(!confirm(`Remover TODOS os serviços do tenant "${tenant}"?`)) return
-    setBusy(true); setLog('')
-    try {
-      const r = await fetch(`${baseUrl.replace(/\/$/, '')}/clientes/${encodeURIComponent(tenant)}`, { method:'DELETE' })
+      // aplica o mesmo número para todos os serviços
+      const body = { incoming: scaleCount, outcoming: scaleCount, campaign: scaleCount, status: scaleCount }
+      const r = await fetch(`${API_BASE.replace(/\/$/, '')}/clientes/${encodeURIComponent(tenantScale)}/scale`, {
+        method:'POST', headers, body: JSON.stringify(body)
+      })
       const data = await r.json().catch(()=>({ raw: true }))
       setLog(JSON.stringify(data, null, 2))
     } catch(e){ setLog(String(e)) } finally { setBusy(false) }
@@ -72,52 +62,42 @@ export default function App(){
       <header className="appbar">
         <div className="wrap container">
           <h1>Cronos — Painel de Provisionamento</h1>
-          <div> <Badge ok={health === 'ok'}>provisioner {health === 'ok' ? 'online' : 'offline'}</Badge> </div>
+          <div> <Badge state={health}>{health === 'ok' ? 'provisioner online' : health === 'down' ? 'provisioner offline' : 'aguardando configuração'}</Badge> </div>
         </div>
       </header>
 
       <main className="container">
-        <div className="card">
-          <div className="head"><h2 style={{margin:0,fontSize:16,fontWeight:600}}>Configuração</h2></div>
-          <div className="content">
-            <div className="grid two">
-              <label className="field">
-                <span>TENANT</span>
-                <input value={tenant} onChange={e=>setTenant(e.target.value)} placeholder="hmg" />
-              </label>
-            </div>
+        <SectionCard title="Criar cliente (apenas TENANT)">
+          <div className="grid two">
+            <label className="field">
+              <span>TENANT</span>
+              <input value={tenantCreate} onChange={e=>setTenantCreate(e.target.value)} placeholder="hmg" />
+            </label>
           </div>
-        </div>
+          <div style={{marginTop:12}} className="row">
+            <button className="primary" onClick={doCreate} disabled={busy}>Criar</button>
+          </div>
+        </SectionCard>
 
-        <div className="card">
-          <div className="head"><h2 style={{margin:0,fontSize:16,fontWeight:600}}>Réplicas</h2></div>
-          <div className="content">
-            <div className="grid four">
-              <NumberInput label="incoming"  value={replicas.incoming  ?? DEFAULT_REPLICAS.incoming}  onChange={n=>setRep('incoming', n)} min={0} />
-              <NumberInput label="outcoming" value={replicas.outcoming ?? DEFAULT_REPLICAS.outcoming} onChange={n=>setRep('outcoming', n)} min={0} />
-              <NumberInput label="campaign"  value={replicas.campaign  ?? DEFAULT_REPLICAS.campaign}  onChange={n=>setRep('campaign', n)} min={0} />
-              <NumberInput label="status"    value={replicas.status    ?? DEFAULT_REPLICAS.status}    onChange={n=>setRep('status', n)} min={0} />
-            </div>
+        <SectionCard title="Escalar réplicas (TENANT + quantidade)">
+          <div className="grid two">
+            <label className="field">
+              <span>TENANT</span>
+              <input value={tenantScale} onChange={e=>setTenantScale(e.target.value)} placeholder="hmg" />
+            </label>
+            <label className="field">
+              <span>Réplicas (para todos os serviços)</span>
+              <input type="number" min={0} value={scaleCount} onChange={e=> setScaleCount(parseInt(e.target.value || '0',10))} />
+            </label>
           </div>
-        </div>
+          <div style={{marginTop:12}} className="row">
+            <button className="blue" onClick={doScale} disabled={busy}>Aplicar escala</button>
+          </div>
+        </SectionCard>
 
-        <div className="card">
-          <div className="head"><h2 style={{margin:0,fontSize:16,fontWeight:600}}>Ações</h2></div>
-          <div className="content">
-            <div className="row">
-              <button className="primary" onClick={doCreate} disabled={busy}>Criar / Aplicar</button>
-              <button className="blue" onClick={doScale} disabled={busy}>Escalar</button>
-              <button className="red" onClick={doDelete} disabled={busy}>Remover</button>
-            </div>
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="head"><h2 style={{margin:0,fontSize:16,fontWeight:600}}>Resultado</h2></div>
-          <div className="content">
-            <pre className="log">{log || '\n ⚠️  As respostas do provisionador aparecerão aqui.\n\n  Dicas:\n  • preencha a URL do provisioner (ex.: http://host:18080)\n  • informe um TENANT (ex.: hmg)\n  • ajuste as réplicas, se quiser\n'}</pre>
-          </div>
-        </div>
+        <SectionCard title="Resultado">
+          <pre className="log">{log || '\n ⚠️  As respostas do provisionador aparecerão aqui.\n\n  Dicas:\n  • configure VITE_API_BASE no .env antes de buildar\n  • use Criar (tenant) ou Escalar (tenant + replicas)\n'}</pre>
+        </SectionCard>
 
         <footer> Cronos © 2025 — DKDevs </footer>
       </main>
